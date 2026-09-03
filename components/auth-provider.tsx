@@ -27,7 +27,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<DbUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUser = useCallback(async (userId: string): Promise<DbUser | null> => {
+  const fetchUser = useCallback(async (userId: string, sess?: Session | null): Promise<DbUser | null> => {
+    if (sess?.access_token) {
+      await supabase.auth.setSession({
+        access_token: sess.access_token,
+        refresh_token: sess.refresh_token,
+      });
+    }
     const { data, error } = await supabase
       .from('users')
       .select('*')
@@ -40,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshUser = useCallback(async () => {
     const { data: { session: s } } = await supabase.auth.getSession();
     if (s?.user) {
-      const u = await fetchUser(s.user.id);
+      const u = await fetchUser(s.user.id, s);
       setUser(u);
     } else {
       setUser(null);
@@ -49,13 +55,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let settingSession = false;
 
     supabase.auth.onAuthStateChange((event, s) => {
+      if (settingSession) return;
       (async () => {
         if (!mounted) return;
         setSession(s);
         if (s?.user) {
-          const u = await fetchUser(s.user.id);
+          settingSession = true;
+          const u = await fetchUser(s.user.id, s);
+          settingSession = false;
           if (mounted) setUser(u);
         } else {
           if (mounted) setUser(null);
@@ -68,7 +78,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!mounted) return;
       setSession(s);
       if (s?.user) {
-        fetchUser(s.user.id).then((u) => {
+        settingSession = true;
+        fetchUser(s.user.id, s).then((u) => {
+          settingSession = false;
           if (mounted) {
             setUser(u);
             setLoading(false);

@@ -28,23 +28,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchUser = useCallback(async (userId: string, sess?: Session | null): Promise<DbUser | null> => {
+    console.log('[fetchUser] start', { userId, hasSession: !!sess, hasAccessToken: !!sess?.access_token, sessionUserId: sess?.user?.id ?? null });
     if (sess?.access_token) {
-      await supabase.auth.setSession({
+      console.log('[fetchUser] calling setSession with access token');
+      const { error: setSessionError } = await supabase.auth.setSession({
         access_token: sess.access_token,
         refresh_token: sess.refresh_token,
       });
+      console.log('[fetchUser] setSession result', { setSessionError: setSessionError ? setSessionError.message : null });
+    } else {
+      console.log('[fetchUser] no access token on session, skipping setSession');
     }
     const { data, error } = await supabase
       .from('users')
       .select('*')
       .eq('id', userId)
       .maybeSingle();
+    console.log('[fetchUser] users query result', {
+      hasData: !!data,
+      error: error ? {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      } : null,
+    });
     if (error) return null;
     return data as DbUser | null;
   }, []);
 
   const refreshUser = useCallback(async () => {
     const { data: { session: s } } = await supabase.auth.getSession();
+    console.log('[refreshUser] getSession result', { hasSession: !!s, userId: s?.user?.id ?? null });
     if (s?.user) {
       const u = await fetchUser(s.user.id, s);
       setUser(u);
@@ -58,6 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let settingSession = false;
 
     supabase.auth.onAuthStateChange((event, s) => {
+      console.log('[onAuthStateChange] event', { event, hasSession: !!s, userId: s?.user?.id ?? null });
       if (settingSession) return;
       (async () => {
         if (!mounted) return;
@@ -75,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     supabase.auth.getSession().then(({ data: { session: s } }) => {
+      console.log('[getSession initial] result', { hasSession: !!s, userId: s?.user?.id ?? null });
       if (!mounted) return;
       setSession(s);
       if (s?.user) {
